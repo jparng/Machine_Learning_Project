@@ -1,0 +1,580 @@
+---
+title: Video Game Genre Classification
+author: Jerry Parng
+output: html_notebook
+---
+The goal of this project is to classify video game genres using attributes such as publisher, sales, and platform. The dataset is from Kaggle.com by user Ulrik Thyge Pedersen.
+
+Kaggle Link: https://www.kaggle.com/datasets/ulrikthygepedersen/video-games-sales?resource=download 
+
+
+
+```{r}
+video_game <- read.csv("video_games_sales.csv", stringsAsFactors = TRUE)
+unique(video_game$genre)
+```
+## 1. Data Exploration
+
+The summary and structure of the dataset are shown below, with 16,598 observations and 11 variables. There are 271 missing values from the year variable. Since there are so many observations, removing 271 will cause a large loss of information, so we will remove them from the dataset.
+```{R}
+str(video_game)
+summary(video_game)
+colSums(is.na(video_game))
+
+```
+```{R}
+video_game <- na.omit(video_game)
+
+colSums(is.na(video_game))
+str(video_game)
+
+```
+Since this project is looking at genre, the name variable is redundant as the rank variable would provide the same identification, thus the name variable will be removed.
+
+```{R}
+video_game <- subset(video_game, select =-(name))
+
+```
+
+
+```{R}
+str(video_game)
+
+
+```
+The relationships between the categorical variables and the outcome variable are shown here.
+
+```{R}
+attach(video_game)
+```
+
+
+
+
+Based on the side-by-side boxplots and ANOVA tests, the genre is associated with rank, year, and sales from NA,EU,JP, other, and global sales. Due to how many outliers there are for the sales attributes, 2 sets of boxplots are made where one has the outliers and the other has the outliers omitted for better visualization.
+
+```{R}
+library(ggplot2)
+plot(rank~genre)
+plot(year~genre)
+plot(na_sales~genre, ylab = "na_sales (millions)", outline = FALSE)
+plot(na_sales~genre, ylab = "na_sales (millions)")
+plot(eu_sales~genre, ylab = "eu_sales (millions)", outline = FALSE)
+plot(eu_sales~genre, ylab = "eu_sales (millions)")
+plot(jp_sales~genre, ylab = "jp_sales (millions)", outline = FALSE)
+plot(jp_sales~genre, ylab = "jp_sales (millions)")
+plot(other_sales~genre, ylab = "other_sales (millions)", outline = FALSE)
+plot(other_sales~genre, ylab = "other_sales (millions)")
+plot(global_sales~genre, ylab = "global_sales (millions)", outline = FALSE)
+plot(global_sales~genre, ylab = "global_sales (millions)")
+
+
+
+
+
+oneway.test(rank~genre, data = video_game)
+oneway.test(year~genre, data = video_game)
+oneway.test(na_sales~genre, data = video_game)
+oneway.test(eu_sales~genre, data = video_game)
+oneway.test(jp_sales~genre, data = video_game)
+oneway.test(other_sales~genre, data = video_game)
+oneway.test(global_sales~genre, data = video_game)
+
+
+```
+Process the levels in to be used in the Chi-square test.
+```{R}
+publisher_table <- table(droplevels(genre), droplevels(video_game$publisher))
+
+```
+
+Relationships between the numerical variables and the outcome variable are shown below.
+
+```{R}
+library(gmodels)
+platform_table <- table(genre, platform)
+chisq.test(platform_table)
+chisq.test(publisher_table)
+
+
+mosaicplot(platform_table, ylab = "platform", xlab="genre", main = "Mosaic Graph of genre vs platform", shade = TRUE, las = 1, cex.axis = 0.5)
+mosaicplot(publisher_table, ylab = "publisher", xlab="genre", main = "Mosaic Graph of genre vs publisher", shade = TRUE)
+
+
+
+
+
+```
+
+Both the platform and publisher attributes showed a p-value of less than 0.5 using the Chi-squared test, and the mosaic plot showed observations between observed and expected frequencies, and this means that the publisher and platform attributes are associated with genre.
+
+
+
+
+
+The barplot and percentages from the levels in the outcome variable show that while Action and Sports have a high percentage compared to the others, it does not seem to be significantly imbalanced.
+```{R}
+barplot(prop.table(table(video_game$genre)))
+
+prop.table(table(video_game$genre))*100
+
+```
+
+
+
+
+
+## 2. Data Analysis
+
+
+The project will use the following models for data analysis:
+
+
+-Random Forest
+-Gradient Boosted Tree
+-Neural Network
+
+
+
+
+
+
+
+The rows will be randomized and the data will be split to training and testing, and the numeric attributes will be scaled. 
+
+```{R}
+
+set.seed(1)
+video_game <- video_game[sample(nrow(video_game), replace = FALSE),]
+
+
+
+
+```
+
+
+
+The data will be partitioned into 90% training and 10% testing data.
+
+```{R}
+library(caret)
+set.seed(1)
+
+game_index <- createDataPartition(video_game$genre, p = .90, list = FALSE)
+
+game_train <- video_game[game_index, ]
+game_test <- video_game[-game_index,]
+
+##Duplicate the test/training data when variables need to be numeric
+game_train_num <- game_train
+game_test_num <- game_test
+
+
+
+```
+
+
+
+
+#SVM Linear
+ 
+
+```{R}
+set.seed(1)
+
+
+linear_grid = expand.grid(C = c(.5, 1, 2, 5))
+
+svm_linear <- train(genre~., data = game_train_num, method = "svmLinear", tuneGrid = linear_grid, trControl = trainControl("cv", number = 10))
+
+
+
+```
+
+
+
+
+```{R}
+library(pROC)
+svm_linear
+
+
+
+linear_pred <- predict(svm_linear, game_test_num)
+linear_matrix <- confusionMatrix(linear_pred, game_test_num$genre)
+
+linear_matrix
+
+linear_AUC <- multiclass.roc(as.numeric(game_test_num$genre), as.numeric(linear_pred))
+
+linear_AUC
+
+
+```
+
+
+
+#SVM Radial
+
+
+```{R}
+set.seed(1)
+
+svm_radial <- train(genre ~., data = game_train_num, trControl = trainControl(method = "cv", number = 10), method = "svmRadial")
+
+
+
+
+
+```
+
+
+```{R}
+
+svm_radial
+
+
+radial_pred <- predict(svm_radial, game_test_num)
+
+radial_matrix <- confusionMatrix(radial_pred, game_test_num$genre)
+
+radial_matrix
+
+
+radial_AUC <- multiclass.roc(as.numeric(game_test_num$genre), as.numeric(radial_pred))
+
+radial_AUC
+
+
+
+```
+
+
+
+
+
+
+#Random Forest
+
+
+Here we will train a random forest model.
+
+
+```{R}
+library(randomForest)
+library(caret)
+set.seed(1)
+
+ctrl <- trainControl(method = "cv", number = 10)
+grid_rf <- expand.grid(mtry = c(1, 3, 10))
+
+
+m_rf <- train(genre ~ ., data = game_train, method = "rf", trControl = ctrl, metric = "Kappa", tuneGrid = grid_rf, importance = TRUE, proximity = TRUE)
+
+
+
+
+```
+
+
+
+Predictions were generated and compared with the model and the test data. A confusion matrix of the predictions and the outcome variable in the test data was made. Finally, AUC was calculated using the multiclass.roc function from the pROC package.
+
+```{R}
+library(caret)
+library(pROC)
+m_rf
+
+
+varImp(m_rf)
+
+
+predictions <- predict(m_rf, game_test_num)
+predictions_prob = predict(m_rf, game_test_num, type = "prob")
+
+
+
+conf_matrix <- confusionMatrix(predictions, game_test_num$genre)
+
+conf_matrix
+
+
+rf_AUC <- multiclass.roc(as.numeric(game_test_num$genre), as.numeric(predictions))
+
+rf_AUC
+```
+
+Random forest rankings are shown using varImp function.
+
+#Gradient Boosted Tree Model
+
+
+```{R}
+set.seed(1)
+
+gbm <- train(genre ~., data =game_train, method ="gbm", trControl = trainControl("cv", number= 10))
+
+
+```
+
+```{R}
+
+gbm
+
+gbm_predictions <- predict(gbm, game_test)
+gbm_conf_matrix <- confusionMatrix(gbm_predictions, game_test$genre)
+
+gbm_conf_matrix
+
+gbm_AUC <- multiclass.roc(as.numeric(game_test_num$genre), as.numeric(gbm_predictions))
+
+gbm_AUC
+
+
+```
+
+
+
+#Neural Network
+
+Categorical variables besides the outcome variable (genre) will be converted to numeric.
+
+```{R}
+#Convert publisher and platform variable to indices
+game_train_num$publisher = sapply(game_train_num$publisher, as.numeric) 
+game_train_num$platform = sapply(game_train_num$platform, as.numeric)
+
+game_test_num$publisher = sapply(game_test_num$publisher, as.numeric)
+game_test_num$platform = sapply(game_test_num$platform, as.numeric)
+
+```
+
+Numerical variables will need to be scaled.   
+
+```{R}
+numeric_cols = c("rank", "year", "na_sales", "eu_sales", "jp_sales", "other_sales","global_sales")
+
+col_means_train <- attr(scale(game_train_num[,numeric_cols]), "scaled:center")
+col_stddevs_train <- attr(scale(game_train_num[,numeric_cols]), "scaled:scale")
+
+
+game_train_num[numeric_cols] = scale(game_train_num[numeric_cols])
+game_test_num[numeric_cols] = scale(game_test_num[numeric_cols], center = col_means_train, scale = col_stddevs_train)
+
+
+```
+```{R}
+library(keras)
+
+```
+
+
+
+The training data will be split again to form the validation data that will be used for hyper-parameter tuning. Platform will be one-hot encoded using the to_categorical function from the kerasR package.
+
+```{R}
+set.seed(1)
+in_train <- createDataPartition(game_train_num$genre, p = 0.8, list = FALSE)
+
+game_train_nn <- as.data.frame(game_train_num[in_train, -4])
+game_validation_nn <- as.data.frame(game_train_num[-in_train, -4])
+
+game_train_nn_labels = to_categorical(as.numeric(game_train_num[in_train, 4]))
+game_validation_nn_labels <- to_categorical(as.numeric(game_train_num[-in_train, 4]))
+
+game_test_nn_labels <- game_test_num$genre
+
+game_train_nn_labels <- game_train_nn_labels[, -1]
+game_validation_nn_labels <- game_validation_nn_labels[, -1]
+
+
+game_train_nn$publisher <- to_categorical(game_train_nn$publisher)
+game_train_nn$platform <- to_categorical(game_train_nn$platform)
+game_validation_nn$publisher <- to_categorical(game_validation_nn$publisher)
+game_validation_nn$platform <- to_categorical(game_validation_nn$platform)
+game_test_num$publisher <- to_categorical(game_test_num$publisher)
+game_test_num$platform <- to_categorical(game_test_num$platform)
+
+
+
+
+```
+
+
+```{R}
+game_train_nn$publisher <- game_train_nn$publisher[, -1]
+game_train_nn$platform <- game_train_nn$platform[, -1]
+
+game_validation_nn$publisher <- game_validation_nn$publisher[, -1]
+game_validation_nn$platform <- game_validation_nn$platform[, -1]
+
+game_test_num$publisher <- game_test_num$publisher[, -1]
+game_test_num$platform <- game_test_num$platform[, -1]
+
+
+```
+
+
+```{R}
+library(data.table)
+game_train_nn_dt <- as.data.table(game_train_nn)
+game_validation_nn_dt <- as.data.table(game_validation_nn)
+
+
+```
+
+
+
+```{R}
+model = keras_model_sequential()
+
+
+model %>%
+  layer_dense(units = 60, activation = "relu", input_shape = 617) %>%
+  layer_dense(units = 25, activation = "relu") %>%
+  layer_dense(units = 12, activation = "softmax")
+  
+set.seed(1)
+
+model %>% compile(
+  loss = "categorical_crossentropy",
+  optimizer = "adam",
+  metrics = "accuracy"
+)
+
+
+history = model %>% fit(
+  as.matrix(game_train_nn_dt), game_train_nn_labels,
+  epochs = 50,
+  batch_size = 100,
+  validation_data = list(as.matrix(game_validation_nn_dt), game_validation_nn_labels)
+)
+
+
+
+
+```
+
+
+
+
+
+
+
+```{R}
+plot(history)
+
+```
+
+We will use the "tfruns" package to adjust the hyper parameters. We will add dropout layers in the Project_Flag.R script to regularize the neural network.
+
+
+```{R}
+library(tfruns)
+
+runs <- tuning_run("Project_Flag.R",
+                   flags = list(
+                     nodes = c(60, 128, 490),
+                     batch_size = c(100, 200, 500, 1000),
+                     activation = c("relu", "softmax")
+                   ),
+                   sample = 0.1
+  
+)
+
+
+
+```
+
+```{R}
+runs
+
+```
+
+From the runs, number 1 had the highest accuracy and will be noted as the best model.
+```{R}
+view_run(runs$run_dir[1])
+
+```
+Parameters for model 1 are 60 nodes, batch_size of 100, relu activation, and dropout levels of 0.5 with 100 epochs.
+
+We will now combine the validation data with the training.
+
+
+```{R}
+
+game_combined_matrix = rbind(game_train_nn_dt, game_validation_nn_dt)
+game_labels_combined = rbind(game_train_nn_labels, game_validation_nn_labels)
+
+
+
+```
+
+We will now run this model again.
+```{R}
+model = keras_model_sequential()
+
+
+model %>%
+  layer_dense(units = 60, activation = "relu", input_shape = 617) %>%
+  layer_dropout(0.5) %>%
+  layer_dense(units = 60, activation = "relu") %>%
+  layer_dropout(0.5) %>%
+  layer_dense(units = 12, activation = "softmax")
+
+set.seed(1)  
+
+model %>% compile(
+  loss = "categorical_crossentropy",
+  optimizer = "adam",
+  metrics = "accuracy"
+)
+
+history = model %>% fit(
+  as.matrix(game_combined_matrix), game_labels_combined,
+  epochs = 100,
+  batch_size = 100,
+  validation_data = list(as.matrix(game_validation_nn_dt), game_validation_nn_labels)
+)
+
+
+
+
+```
+
+
+```{R}
+plot(history)
+
+```
+
+Using this model, we will predict the genre for the test data.
+
+
+```{R}
+set.seed(1)
+
+
+game_test_num_matrix <- as.matrix(game_test_num[,-4])
+
+game_test_labels <- as.numeric(game_test_num$genre)
+
+
+
+nn_pred <- model %>% predict(game_test_num_matrix)
+nn_pred <- apply(nn_pred, 1, which.max)
+
+
+nn_matrix <- confusionMatrix(as.factor(nn_pred), as.factor(game_test_labels))
+
+nn_matrix
+
+nn_AUC <- multiclass.roc(as.numeric(nn_pred), as.numeric(game_test_labels))
+
+nn_AUC
+
+```
+
+
+
+
